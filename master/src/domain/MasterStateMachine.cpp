@@ -1,4 +1,5 @@
 #include "MasterStateMachine.h"
+#include "RetryPolicy.h"
 #include "../include/ErrorCodes.h"
 #include "../src/transport/I2CBus.h"
 #include "../src/transport/SerialTransport.h"
@@ -198,23 +199,20 @@ static void broadcastModeReady(MasterContext& context) {
     
     for (uint8_t i = 0; i < context.slaveCount; i++) {
         if (context.slaves[i].mode == SlaveMode::IDLE_AWAITING_LOAD) {
-            // Send MODE_READY to gate insertions
             I2CFrame::encodeCommand(I2cOpcode::MODE_READY, 0, 0, cmd_frame);
-            SlaveBus::sendCommand(i, cmd_frame);
+            SlaveBus::sendCommand(context, i, cmd_frame);
         }
     }
 }
 
 static void broadcastModeAwaitingLoad(MasterContext& context) {
     // FR-005a back-half: When returning to IDLE, broadcast MODE_AWAITING_LOAD to EMPTY slaves
-    // so they're ready to accept insertions again
     uint8_t cmd_frame[4];
     
     for (uint8_t i = 0; i < context.slaveCount; i++) {
         if (context.slaves[i].mode == SlaveMode::EMPTY) {
-            // Send MODE_AWAITING_LOAD to allow insertions
             I2CFrame::encodeCommand(I2cOpcode::MODE_AWAITING_LOAD, 0, 0, cmd_frame);
-            SlaveBus::sendCommand(i, cmd_frame);
+            SlaveBus::sendCommand(context, i, cmd_frame);
         }
     }
 }
@@ -239,6 +237,11 @@ static void validateCommand(MasterContext& context, uint32_t now_ms) {
             }
             if (!context.slaves[target_idx].online) {
                 error = ErrorCode::ERR_SLAVE_OFFLINE;
+                break;
+            }
+            // T064: FAULT-channel guard (FR-009)
+            if (context.slaves[target_idx].lastError != ErrorCode::OK) {
+                error = ErrorCode::ERR_SLAVE_OFFLINE;  // fail3 per FR-009
                 break;
             }
             
@@ -276,6 +279,11 @@ static void validateCommand(MasterContext& context, uint32_t now_ms) {
             }
             if (!context.slaves[target_idx].online) {
                 error = ErrorCode::ERR_SLAVE_OFFLINE;
+                break;
+            }
+            // T064: FAULT-channel guard (FR-009)
+            if (context.slaves[target_idx].lastError != ErrorCode::OK) {
+                error = ErrorCode::ERR_SLAVE_OFFLINE;  // fail3 per FR-009
                 break;
             }
             
@@ -414,14 +422,12 @@ static void processEjectSlave(MasterContext& context, uint32_t now_ms) {
 }
 
 static void processLoadPrinter(MasterContext& context, uint32_t now_ms) {
-    // Process 3: Stepper feed + sensor verify
+    // Process 3: Stepper feed + sensor verify (with FR-011 retry logic)
     uint8_t target_idx = g_machine.in_flight_cmd.argument;
-    
+
     // Check if servo is settled first
     if (!context.slaves[target_idx].servo_settled) {
-        // Servo still moving, wait
-        if (now_ms - g_machine.state_entered_ms > 1000) {  // 1 second timeout
-            // Timeout waiting for servo
+        if (now_ms - g_machine.state_entered_ms > 1000) {
             g_machine.pending_response.response_type = ResponseContext::ResponseType::FAIL;
             g_machine.pending_response.error_code = ErrorCode::ERR_ILLEGAL_STATE;
             g_machine.response_ready = true;
@@ -430,42 +436,57 @@ static void processLoadPrinter(MasterContext& context, uint32_t now_ms) {
         }
         return;
     }
-    
-    // Send MODE_IN_PRINTER to slave
+
+    // Send MODE_IN_PRINTER to slave (idempotent — safe to re-send on retry)
     uint8_t cmd_frame[4];
     I2CFrame::encodeCommand(I2cOpcode::MODE_IN_PRINTER, 0, 0, cmd_frame);
     I2CBus::write(context.slaves[target_idx].i2cAddress, cmd_frame);
-    
-    // Start stepper feed
+
+    // Start stepper feed if not already running
     if (!Stepper::isRunning()) {
         Stepper::start(Stepper::Direction::FORWARD);
-        context.slaves[target_idx].feedDeadlineMs = now_ms + FEED_TIMEOUT_MS;
+        context.slaves[target_idx].feedDeadlineMs = now_ms + Config::FEED_TIMEOUT_MS;
     }
-    
+
     // Poll sensor to verify filament in hotend
     if (context.slaves[target_idx].sensorB) {
-        // Sensor active → filament in hotend!
+        // Success: filament confirmed in hotend
         Stepper::stop();
         context.currentToolIdx = target_idx;
         context.slaves[target_idx].mode = SlaveMode::IN_PRINTER;
-        
-        // If this was T<nr>, respond ok and return to IDLE
-        // If this was L<n>, also respond ok and return to IDLE
+        context.slaves[target_idx].feedRetryCount = 0;  // Reset on success
         g_machine.pending_response.response_type = ResponseContext::ResponseType::OK;
         g_machine.response_ready = true;
         context.state = MasterState::IDLE;
         g_machine.current_state = MasterState::IDLE;
+        broadcastModeAwaitingLoad(context);  // Re-enable insertions
     } else if (now_ms > context.slaves[target_idx].feedDeadlineMs) {
-        // Timeout waiting for sensor
+        // Feed timeout: attempt retry (FR-011 / FR-011a)
         Stepper::stop();
-        g_machine.pending_response.response_type = ResponseContext::ResponseType::FAIL;
-        g_machine.pending_response.error_code = ErrorCode::ERR_FEED_TIMEOUT;
-        g_machine.response_ready = true;
-        context.state = MasterState::FAULT;
-        g_machine.current_state = MasterState::FAULT;
+        uint8_t attempt = context.slaves[target_idx].feedRetryCount;
+
+        if (RetryPolicy::shouldRetryFeed(attempt)) {
+            // Retry: only the failing sub-step on the same slave (FR-011a)
+            context.slaves[target_idx].feedRetryCount++;
+            // Arm backoff deadline before re-issuing feed
+            context.slaves[target_idx].feedDeadlineMs =
+                now_ms + RetryPolicy::nextFeedBackoff(attempt) + Config::FEED_TIMEOUT_MS;
+            // Log retry attempt (FR-020)
+            DiagnosticLog::logRetry(target_idx, I2cOpcode::MODE_IN_PRINTER,
+                                    ErrorCode::ERR_FEED_TIMEOUT, attempt + 1);
+            // Restart stepper for next attempt (stays in LOAD_PRINTER state)
+            Stepper::start(Stepper::Direction::FORWARD);
+        } else {
+            // All retries exhausted → FAULT (FR-011)
+            context.slaves[target_idx].lastError = ErrorCode::ERR_FEED_TIMEOUT;
+            context.slaves[target_idx].mode = SlaveMode::FAULT;
+            g_machine.pending_response.response_type = ResponseContext::ResponseType::FAIL;
+            g_machine.pending_response.error_code = ErrorCode::ERR_FEED_TIMEOUT;
+            g_machine.response_ready = true;
+            context.state = MasterState::FAULT;
+            g_machine.current_state = MasterState::FAULT;
+        }
     }
-    
-    g_machine.state_entered_ms = now_ms;
 }
 
 static void processUnloadPrinter(MasterContext& context, uint32_t now_ms) {
@@ -526,23 +547,34 @@ static void processUnloadPrinter(MasterContext& context, uint32_t now_ms) {
 }
 
 static void processReset(MasterContext& context, uint32_t now_ms) {
-    // RESET: Release all slaves, return to IDLE
+    // RESET: Release all slaves, return to IDLE (FR-016 / TECHNICAL_DESIGN Process Reset)
     
     // Send RELEASE to any coupled slave
     if (context.coupledSlaveIdx >= 0) {
         uint8_t cmd_frame[4];
         I2CFrame::encodeCommand(I2cOpcode::RELEASE, 0, 0, cmd_frame);
-        I2CBus::write(context.slaves[context.coupledSlaveIdx].i2cAddress, cmd_frame);
+        SlaveBus::sendCommand(context, context.coupledSlaveIdx, cmd_frame);
         context.coupledSlaveIdx = -1;
     }
     
     // Stop stepper if running
     Stepper::stop();
     
-    // Reset all slave states
+    // T066: Clear all slave fault state + retry counters (FR-016 reset semantics)
     for (uint8_t i = 0; i < context.slaveCount; i++) {
+        uint8_t mode_frame[4], await_frame[4];
+        // Reset mode to IDLE_AWAITING_LOAD
         context.slaves[i].mode = SlaveMode::IDLE_AWAITING_LOAD;
+        context.slaves[i].feedRetryCount = 0;
+        context.slaves[i].busRetryCount = 0;
+        context.slaves[i].lastError = ErrorCode::OK;
+        // Broadcast RELEASE + MODE_AWAITING_LOAD to each slave
+        I2CFrame::encodeCommand(I2cOpcode::RELEASE, 0, 0, mode_frame);
+        SlaveBus::sendCommand(context, i, mode_frame);
+        I2CFrame::encodeCommand(I2cOpcode::MODE_AWAITING_LOAD, 0, 0, await_frame);
+        SlaveBus::sendCommand(context, i, await_frame);
     }
+    context.currentToolIdx = -1;
     
     // Respond ok and return to IDLE
     g_machine.pending_response.response_type = ResponseContext::ResponseType::OK;
@@ -552,8 +584,6 @@ static void processReset(MasterContext& context, uint32_t now_ms) {
     
     // T054: Broadcast MODE_AWAITING_LOAD to re-enable insertions
     broadcastModeAwaitingLoad(context);
-    
-    g_machine.current_state = MasterState::IDLE;
 }
     g_machine.current_state = MasterState::IDLE;
 }

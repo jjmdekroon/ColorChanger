@@ -54,6 +54,18 @@ void tick(SlaveContext& context, uint32_t now_ms) {
     g_machine.sensor_was_active = sensor_active;
     context.sensorBStable = sensor_active;
     
+    // T065: Sensor-stuck detection (FR-009)
+    // Servo is OPEN but sensor reports filament for > FEED_TIMEOUT_MS → FAULT
+    if (context.mode != SlaveMode::FAULT) {
+        bool servoOpen = !context.servoClosedTarget;
+        if (servoOpen && context.sensorBStable && context.sensorEdgeMs > 0 &&
+            (now_ms - context.sensorEdgeMs > 5000 /* FEED_TIMEOUT_MS */)) {
+            // Sensor stuck: filament present but gripper open
+            context.mode = SlaveMode::FAULT;
+            context.lastError = ErrorCode::ERR_SENSOR_STUCK;
+        }
+    }
+    
     // Update LED based on current mode
     updateLed(context);
     
@@ -159,8 +171,9 @@ static bool isCommandLegal(I2cOpcode opcode, SlaveMode current_mode) {
         case SlaveMode::UNADDRESSED:
         case SlaveMode::FAULT:
         default:
-            // Error states: no commands
-            return opcode == I2cOpcode::PING;
+            // FAULT: sticky — ALL opcodes blocked per FR-016
+            // (PING also blocked: master must re-enumerate to clear)
+            return false;
     }
 }
 

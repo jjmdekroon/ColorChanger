@@ -1,7 +1,9 @@
 #include "SlaveBus.h"
+#include "RetryPolicy.h"
 #include "../include/Config.h"
 #include "../src/transport/I2CBus.h"
 #include "../src/protocol/I2CFrame.h"
+#include "../src/hal/DiagnosticLog.h"
 
 #ifdef MASTER_BUILD
 #include <Arduino.h>
@@ -118,6 +120,61 @@ void suspendBroadcast() {
 void resumeBroadcast() {
     g_broadcast_suspended = false;
     g_broadcast_requested = true;
+}
+
+I2CBus::Result sendCommand(MasterContext& context, uint8_t slave_idx, const uint8_t cmd_frame[4]) {
+    // FR-017: bus-retry with exponential backoff
+    // busRetryCount is per-command and MUST NOT touch feedRetryCount
+    uint8_t busAttempt = 0;
+
+    do {
+        I2CBus::Result res = I2CBus::write(context.slaves[slave_idx].i2cAddress, cmd_frame);
+        if (res == I2CBus::Result::OK) {
+            return I2CBus::Result::OK;
+        }
+        // NACK / TIMEOUT / SHORT_READ
+        if (!RetryPolicy::shouldRetryBus(busAttempt + 1)) {
+            break;  // Exhausted
+        }
+        // Log retry attempt (FR-020)
+        DiagnosticLog::logRetry(slave_idx, I2cOpcode::PING,
+                                ErrorCode::ERR_BUS_TIMEOUT, busAttempt + 1);
+#ifdef MASTER_BUILD
+        uint32_t deadline = millis() + RetryPolicy::nextBusBackoff(busAttempt);
+        while (millis() < deadline) { /* spin */ }
+#endif
+        busAttempt++;
+    } while (RetryPolicy::shouldRetryBus(busAttempt));
+
+    // All retries exhausted → channel FAULT (FR-017)
+    return I2CBus::Result::BUS_FAULT;
+}
+
+I2CBus::Result sendCommandWithResponse(MasterContext& context, uint8_t slave_idx,
+                                       const uint8_t cmd_frame[4],
+                                       uint8_t status_frame[4]) {
+    uint8_t busAttempt = 0;
+
+    do {
+        uint8_t addr = context.slaves[slave_idx].i2cAddress;
+        I2CBus::Result res = I2CBus::write(addr, cmd_frame);
+        if (res == I2CBus::Result::OK) {
+            res = I2CBus::request(addr, status_frame);
+        }
+        if (res == I2CBus::Result::OK) {
+            return I2CBus::Result::OK;
+        }
+        if (!RetryPolicy::shouldRetryBus(busAttempt + 1)) {
+            break;
+        }
+#ifdef MASTER_BUILD
+        uint32_t deadline = millis() + RetryPolicy::nextBusBackoff(busAttempt);
+        while (millis() < deadline) { /* spin */ }
+#endif
+        busAttempt++;
+    } while (RetryPolicy::shouldRetryBus(busAttempt));
+
+    return I2CBus::Result::BUS_FAULT;
 }
 
 }  // namespace SlaveBus
