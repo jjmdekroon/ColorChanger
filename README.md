@@ -1,18 +1,125 @@
-# Multi-material Upgrade for Klipper 3D-Printer — Implementation Progress
+# Multi-Material Upgrade — MMU Firmware
 
-## Overview
+ESP32-C3 firmware for a Klipper-controlled multi-material unit. One master board
+drives a shared stepper + EN-chain; up to 16 slave boards each hold a clamp
+servo, filament sensor, and WS2812 LED.
 
-This is a Klipper-compatible Multi-Material Upgrade (MMU) firmware project for SEEED XIAO ESP32-C3 microcontrollers.
+**Status**: All 6 phases complete — 77 tasks implemented and committed.
 
-**Project Structure**: Two firmware images (master and slave) communicate via I2C; the master coordinates with Klipper via USB-serial; slaves control filament loading/unloading via servos and sensors.
+---
 
-**Total Tasks**: 77 across 6 phases
-- Phase 1 (Setup): 7 tasks ✓ **COMPLETE**
-- Phase 2 (Foundational): 26 tasks (in progress)
-- Phase 3 (User Story 1 - Material Change): 16 tasks
-- Phase 4 (User Story 2 - Hot-plug): 8 tasks
-- Phase 5 (User Story 3 - Fault Detection): 12 tasks
-- Phase 6 (Polish & Validation): 8 tasks
+## Repository layout
+
+```
+shared/                       Shared Protocol.h (I2cOpcode, SlaveMode, ErrorCode, frames)
+master/                       Master firmware (SEEED XIAO ESP32-C3)
+  include/Config.h            All constexpr timing/sizing constants
+  src/transport/              SerialTransport (USB↔Klipper), I2CBus (Wire master)
+  src/protocol/               SerialProtocol (line parser/serialiser)
+  src/domain/                 MasterStateMachine, SlaveBus, Enumerator, RetryPolicy
+  src/hal/                    Stepper, EnableChain, DiagnosticLog
+slave/                        Slave firmware (same board, positional identity)
+  src/transport/              I2CSlave (Wire slave with interrupt callbacks)
+  src/domain/                 SlaveStateMachine, EnumerationResponder
+  src/hal/                    FilamentSensor, Gripper, LedIndicator, EnablePin
+klipper/                      Klipper G-code macros
+  mmu_macros.cfg              MMU_LOAD, MMU_EJECT, MMU_RESET, MMU_STATUS
+  mmu_tool_change.cfg         T0–T3, _MMU_HANDLE_FAIL, CALL_MMU_COMMAND
+  README.md                   Klipper integration guide
+test/
+  native/                     Host-side Unity contract tests (pio test -e native)
+  integration/                README.md — bench validation procedure & SC checklists
+specs/001-multi-material-upgrade/
+                              spec.md, plan.md, tasks.md, contracts/, quickstart.md
+```
+
+---
+
+## Flashing
+
+### Prerequisites
+
+- [PlatformIO CLI](https://docs.platformio.org/en/latest/core/installation.html) installed (`pip install platformio`)
+- SEEED XIAO ESP32-C3 boards connected via USB
+
+### Master
+
+```sh
+pio run -e master --target upload --upload-port /dev/ttyUSB0
+```
+
+### Slave (flash one board at a time)
+
+```sh
+pio run -e slave --target upload --upload-port /dev/ttyUSB1
+```
+
+All slaves share the same firmware image. Identity is assigned at runtime via
+the EN-chain enumeration sequence (see
+[specs/001-multi-material-upgrade/contracts/i2c-frames.md](specs/001-multi-material-upgrade/contracts/i2c-frames.md)).
+
+---
+
+## Running host-side tests
+
+```sh
+pio test -e native
+```
+
+All contract tests in `test/native/` are compiled with `-DNATIVE_TEST` and run
+on the host (no hardware required).
+
+---
+
+## Klipper integration
+
+1. Copy or symlink `klipper/mmu_macros.cfg` and `klipper/mmu_tool_change.cfg`
+   into your Klipper config directory.
+
+2. Add to `printer.cfg`:
+
+   ```ini
+   [include mmu_macros.cfg]
+   [include mmu_tool_change.cfg]
+   ```
+
+3. Configure the master serial port in `mmu_macros.cfg` (set `variable_mmu_port`
+   to the USB path of the master board, e.g. `/dev/ttyACM0`).
+
+4. In your print start sequence use the Klipper `T0`/`T1`/… macros defined in
+   `mmu_tool_change.cfg`. Tool changes issue USB-serial commands to the master
+   and handle `fail<n>` → `PAUSE` per FR-003c.
+
+See [klipper/README.md](klipper/README.md) for details.
+
+---
+
+## Architecture overview
+
+```
+Klipper ──USB-serial──▶ Master ESP32-C3 ──I2C (EN-chain)──▶ Slave 1 … Slave N
+                         │                                    │
+                         │ SerialProtocol / SerialTransport   │ SlaveStateMachine
+                         │ MasterStateMachine                 │ I2CSlave
+                         │ SlaveBus (PING polling)            │ Gripper / Sensor / LED
+                         │ Enumerator (boot + hot-plug)
+                         │ RetryPolicy (bus 3×, feed 3×)
+```
+
+- **USB-serial**: line-based ASCII, 115200 8N1, max 63 bytes/line (`SERIAL_LINE_MAX`)
+- **I2C**: 100 kHz, 4-byte command frames (master→slave) + 4-byte status frames (slave→master)
+- **Retry policy**: bus retries 3× at 10/20/40 ms; feed retries 3× at 1/2/4 s
+- **Polling**: each online slave is PING'd every `POLL_SLAVE_INTERVAL_MS = 50` ms
+
+Full specification: [specs/001-multi-material-upgrade/spec.md](specs/001-multi-material-upgrade/spec.md)
+
+---
+
+## CI
+
+GitHub Actions runs `pio test -e native` and builds master + slave firmware on
+every push and pull request. See [.github/workflows/ci.yml](.github/workflows/ci.yml).
+
 
 ---
 

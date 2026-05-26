@@ -1,6 +1,14 @@
 // ==============================================================================
 // Multi-material Upgrade Slave Firmware
 // Main entry point for SEEED XIAO ESP32-C3 (slave module)
+//
+// HOT-PATH CONSTRAINTS (Principle II/III):
+// - No delay() calls in loop() or any function called from loop().
+// - No String (heap) objects on hot paths; all I2C frames are fixed 4-byte arrays.
+// - No new/malloc on hot paths; SlaveContext is a static global.
+//
+// KNOWN EXCEPTIONS: none — all timeouts use millis()-based deadlines in
+// SlaveStateMachine::tick().
 // ==============================================================================
 
 #include <Arduino.h>

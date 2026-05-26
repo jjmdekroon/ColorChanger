@@ -1,6 +1,19 @@
 // ==============================================================================
 // Multi-material Upgrade Master Firmware
 // Main entry point for SEEED XIAO ESP32-C3
+//
+// HOT-PATH CONSTRAINTS (Principle II/III):
+// - No delay() calls in setup() / loop() or any function called from loop().
+// - No String (heap) objects on hot paths; all buffers are fixed-size arrays.
+// - No new/malloc on hot paths; all state is in static globals or stack.
+//
+// KNOWN EXCEPTIONS:
+// - master/src/transport/I2CBus.cpp: delay(BUS_RETRY_BACKOFF_MS[n]) is called
+//   inside I2CBus::write() and I2CBus::request() ONLY on I2C retry attempts
+//   (i.e. after a NACK/TIMEOUT, which are exceptional, not the steady-state
+//   path). Maximum cumulative blocking time: 10+20+40 = 70 ms across all
+//   retries. Acceptable because I2C retries are bounded and infrequent; a
+//   millis()-based refactor would require a custom ISR-based Wire implementation.
 // ==============================================================================
 
 #include <Arduino.h>
