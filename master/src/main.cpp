@@ -17,16 +17,16 @@
 // ==============================================================================
 
 #include <Arduino.h>
-#include "include/Config.h"
-#include "src/transport/SerialTransport.h"
-#include "src/transport/I2CBus.h"
-#include "src/protocol/SerialProtocol.h"
-#include "src/domain/MasterContext.h"
-#include "src/domain/MasterStateMachine.h"
-#include "src/domain/SlaveBus.h"
-#include "src/hal/Stepper.h"
-#include "src/hal/EnableChain.h"
-#include "src/hal/DiagnosticLog.h"
+#include "Config.h"
+#include "transport/SerialTransport.h"
+#include "transport/I2CBus.h"
+#include "protocol/SerialProtocol.h"
+#include "domain/MasterContext.h"
+#include "domain/MasterStateMachine.h"
+#include "domain/SlaveBus.h"
+#include "hal/Stepper.h"
+#include "hal/EnableChain.h"
+#include "hal/DiagnosticLog.h"
 
 // Global context (per-loop state)
 static MasterContext g_context;
@@ -115,7 +115,7 @@ static void serviceProtocol() {
         if (err != ErrorCode::OK) {
             // Parse error: respond immediately
             ResponseContext resp;
-            resp.response_type = ResponseContext::ResponseType::FAIL;
+            resp.response_type = ResponseType::FAIL;
             resp.error_code = err;
             
             char response_buf[128];

@@ -1,8 +1,9 @@
 #ifndef MASTER_SERIAL_PROTOCOL_H
 #define MASTER_SERIAL_PROTOCOL_H
 
-#include "../../shared/Protocol.h"
+#include "Protocol.h"
 #include <cstdint>
+#include <cstddef>
 
 // ==============================================================================
 // Serial Protocol Interface
@@ -52,6 +53,8 @@ struct ResponseContext {
 // From contracts/usb-serial.md §"Request Format"
 // ==============================================================================
 
+namespace SerialProtocol {
+
 /**
  * Parse a single USB-serial line into a command
  * @param line         Text line (NOT null-terminated; length in len parameter)
@@ -59,10 +62,10 @@ struct ResponseContext {
  * @param out          Parsed command (if returns OK)
  * @param err          Error code (if returns != OK)
  * @param slaveCount   Number of enumerated slaves (for bounds checking on indices)
- * @return             0 if OK, non-zero if parse error
+ * @return             ErrorCode::OK on success; parse error code otherwise
  */
-int parseLine(const char* line, size_t len, SerialCommand& out, ErrorCode& err,
-              uint8_t slaveCount);
+ErrorCode parseLine(const char* line, size_t len, SerialCommand& out, ErrorCode& err,
+                    uint8_t slaveCount);
 
 // ==============================================================================
 // Responder: ResponseContext → Text Line
@@ -77,5 +80,7 @@ int parseLine(const char* line, size_t len, SerialCommand& out, ErrorCode& err,
  * @return           Length of written line (excluding null terminator)
  */
 size_t serializeResponse(const ResponseContext& ctx, char* out, size_t out_len);
+
+}  // namespace SerialProtocol
 
 #endif  // MASTER_SERIAL_PROTOCOL_H

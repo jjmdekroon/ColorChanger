@@ -1,7 +1,7 @@
 #ifndef MASTER_ERROR_CODES_H
 #define MASTER_ERROR_CODES_H
 
-#include "../../../shared/Protocol.h"
+#include "Protocol.h"
 #include <cstdint>
 
 // ==============================================================================
@@ -12,7 +12,7 @@
 
 // Table of error codes and their numeric fail<n> mappings
 // fail1..fail255 used in USB-serial protocol responses
-constexpr uint8_t failNumFor(ErrorCode code) {
+inline uint8_t failNumFor(ErrorCode code) {
     switch (code) {
         case ErrorCode::OK:
             return 0;  // No error (not sent as fail<n>)
@@ -31,11 +31,12 @@ constexpr uint8_t failNumFor(ErrorCode code) {
         default:
             return 255; // fail255: Unknown error
     }
+    return 255;
 }
 
 // Reverse mapping: fail<n> → ErrorCode
 // Used for error classification
-constexpr ErrorCode errorCodeFor(uint8_t failNum) {
+inline ErrorCode errorCodeFor(uint8_t failNum) {
     switch (failNum) {
         case 1:
             return ErrorCode::ERR_BAD_OPCODE;
@@ -54,10 +55,11 @@ constexpr ErrorCode errorCodeFor(uint8_t failNum) {
         default:
             return ErrorCode::OK;
     }
+    return ErrorCode::OK;
 }
 
 // Human-readable error text (stored in PROGMEM on AVR, const on ESP32)
-constexpr const char* failTextFor(ErrorCode code) {
+inline const char* failTextFor(ErrorCode code) {
     switch (code) {
         case ErrorCode::OK:
             return "OK";
@@ -76,6 +78,7 @@ constexpr const char* failTextFor(ErrorCode code) {
         default:
             return "error";
     }
+    return "error";
 }
 
 // Categorize error for recovery strategy
@@ -87,7 +90,7 @@ enum class ErrorCategory {
     FATAL,        // Internal → FAULT state
 };
 
-constexpr ErrorCategory categorizeError(ErrorCode code) {
+inline ErrorCategory categorizeError(ErrorCode code) {
     switch (code) {
         case ErrorCode::OK:
             return ErrorCategory::OK;
@@ -104,6 +107,7 @@ constexpr ErrorCategory categorizeError(ErrorCode code) {
         default:
             return ErrorCategory::FATAL;
     }
+    return ErrorCategory::FATAL;
 }
 
 #endif // MASTER_ERROR_CODES_H

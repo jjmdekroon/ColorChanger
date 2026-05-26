@@ -1,8 +1,8 @@
 #ifndef MASTER_ENUMERATOR_H
 #define MASTER_ENUMERATOR_H
 
-#include "../../shared/Protocol.h"
-#include "../src/domain/MasterContext.h"
+#include "Protocol.h"
+#include "MasterContext.h"
 
 // ==============================================================================
 // Master Enumerator

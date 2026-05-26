@@ -52,6 +52,7 @@ in-memory ringbuffer voor diagnose-logs is vluchtig.
 - Contracttests voor USB-serial-protocol (regelgebaseerd tekst) en I2C-frameformaat als host-side fixtures die master/slave-parsers aanroepen
 - Integration-tests op bench: `quickstart.md`-scenario's voor User Stories US1–US3
 - Klipper-macro's getest met een minimale stub-host die `T<nr>`/`L<n>`/`U<n>`/`R`/`S` regels stuurt en antwoorden valideert
+- Build-validatie is een verplichte completion gate: voer minimaal `pio run -e master` uit voor master-wijzigingen, `pio run -e slave` voor slave-wijzigingen, en bij gedeelde/cross-role wijzigingen ook beide builds plus `pio test -e native`.
 
 **Target Platform**:
 - Firmware: SEEED XIAO ESP32-C3 (zowel master als alle slaves)
@@ -155,6 +156,9 @@ host-test-environment.
   - *Test-first op contracten*: dit plan levert `contracts/usb-serial.md` en
     `contracts/i2c-frames.md`; de bijbehorende host-side contracttests worden in
     Phase 2 (`/speckit.tasks`) vóór de productiecode geschreven.
+  - *Build-first completion gate*: werk is pas "done" als de relevante
+    PlatformIO-targets aantoonbaar bouwen (`master`, `slave`, en `native` waar
+    van toepassing) met commando-output opgenomen in de implementatierapportage.
   - *Runtime-fault-handling*: feed-retries 3× met exponentiële backoff 1/2/4 s
     (FR-011/011a), bus-retries 3× met 10/20/40 ms (FR-017); `FAULT`-state is sticky tot
     operator-interventie / master-reset (FR-016).

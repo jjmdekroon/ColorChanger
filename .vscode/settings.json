@@ -10,7 +10,8 @@
         ".specify/scripts/bash/": true,
         ".specify/scripts/powershell/": true,
         "git rev-parse": true,
-        ".\\.specify\\extensions\\git\\scripts\\powershell\\create-new-feature.ps1": true
+        ".\\.specify\\extensions\\git\\scripts\\powershell\\create-new-feature.ps1": true,
+        "pio": true
     }
 }
 

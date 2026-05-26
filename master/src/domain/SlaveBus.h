@@ -1,7 +1,8 @@
 #ifndef MASTER_SLAVEBUS_H
 #define MASTER_SLAVEBUS_H
 
-#include "../src/domain/MasterContext.h"
+#include "MasterContext.h"
+#include "../transport/I2CBus.h"
 
 // ==============================================================================
 // Master Slave Bus

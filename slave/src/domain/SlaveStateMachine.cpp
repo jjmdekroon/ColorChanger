@@ -1,8 +1,9 @@
 #include "SlaveStateMachine.h"
-#include "../src/protocol/I2CFrame.h"
-#include "../src/hal/FilamentSensor.h"
-#include "../src/hal/Gripper.h"
-#include "../src/hal/LedIndicator.h"
+#include "../protocol/I2CFrame.h"
+#include "../hal/FilamentSensor.h"
+#include "../hal/Gripper.h"
+#include "../hal/LedIndicator.h"
+#include "../../include/Config.h"
 
 #ifdef SLAVE_BUILD
 #include <Arduino.h>
@@ -21,15 +22,20 @@ struct MachineState {
 
 static MachineState g_machine;
 
+static void onSensorRisingEdge(SlaveContext& context, uint32_t now_ms);
+static void onSensorFallingEdge(SlaveContext& context, uint32_t now_ms);
+static bool isCommandLegal(I2cOpcode opcode, SlaveMode current_mode);
+static void updateLed(SlaveContext& context);
+
 // ============================================================================
 // Initialization
 // ============================================================================
 
 void init(SlaveContext& context) {
-    context.mode = SlaveMode::EMPTY;
+    context.mode = SlaveMode::IDLE_AWAITING_LOAD;
     context.lastError = ErrorCode::OK;
-    g_machine.current_mode = SlaveMode::EMPTY;
-    g_machine.previous_mode = SlaveMode::EMPTY;
+    g_machine.current_mode = SlaveMode::IDLE_AWAITING_LOAD;
+    g_machine.previous_mode = SlaveMode::IDLE_AWAITING_LOAD;
     g_machine.mode_entered_ms = millis();
     g_machine.sensor_was_active = false;
 }
@@ -57,9 +63,9 @@ void tick(SlaveContext& context, uint32_t now_ms) {
     // T065: Sensor-stuck detection (FR-009)
     // Servo is OPEN but sensor reports filament for > FEED_TIMEOUT_MS → FAULT
     if (context.mode != SlaveMode::FAULT) {
-        bool servoOpen = !context.servoClosedTarget;
-        if (servoOpen && context.sensorBStable && context.sensorEdgeMs > 0 &&
-            (now_ms - context.sensorEdgeMs > 5000 /* FEED_TIMEOUT_MS */)) {
+        bool servoOpen = (context.servoClosedTargetUs != SERVO_GRIP_US);
+        if (servoOpen && context.sensorBStable && context.sensorBChangeMs > 0 &&
+            (now_ms - context.sensorBChangeMs > FEED_TIMEOUT_MS)) {
             // Sensor stuck: filament present but gripper open
             context.mode = SlaveMode::FAULT;
             context.lastError = ErrorCode::ERR_SENSOR_STUCK;
@@ -79,8 +85,9 @@ void tick(SlaveContext& context, uint32_t now_ms) {
 
 static void onSensorRisingEdge(SlaveContext& context, uint32_t now_ms) {
     // Filament detected (sensor 0 → 1)
+    context.sensorBChangeMs = now_ms;
     
-    if (context.mode == SlaveMode::EMPTY || context.mode == SlaveMode::IDLE_AWAITING_LOAD) {
+    if (context.mode == SlaveMode::IDLE_AWAITING_LOAD) {
         // Autonomous load: transition to LOADING → READY
         // Per FR-005a
         context.mode = SlaveMode::LOADING;
@@ -96,6 +103,7 @@ static void onSensorRisingEdge(SlaveContext& context, uint32_t now_ms) {
 
 static void onSensorFallingEdge(SlaveContext& context, uint32_t now_ms) {
     // Filament removed (sensor 1 → 0)
+    context.sensorBChangeMs = now_ms;
     
     if (context.mode == SlaveMode::IN_PRINTER) {
         // Autonomous catch: transition to CATCHING
@@ -122,15 +130,11 @@ static bool isCommandLegal(I2cOpcode opcode, SlaveMode current_mode) {
     // and contracts/i2c-frames.md
     
     switch (current_mode) {
-        case SlaveMode::EMPTY:
-            // EMPTY: no commands allowed except MODE_*
-            return opcode == I2cOpcode::MODE_AWAITING_LOAD || 
-                   opcode == I2cOpcode::PING;
-        
         case SlaveMode::IDLE_AWAITING_LOAD:
             // Awaiting load: can GRIP, PING, MODE_*
             return opcode == I2cOpcode::GRIP || 
                    opcode == I2cOpcode::MODE_AWAITING_LOAD || 
+                   opcode == I2cOpcode::MODE_READY ||
                    opcode == I2cOpcode::PING;
         
         case SlaveMode::LOADING:
@@ -167,7 +171,6 @@ static bool isCommandLegal(I2cOpcode opcode, SlaveMode current_mode) {
                    opcode == I2cOpcode::MODE_IN_PRINTER ||
                    opcode == I2cOpcode::PING;
         
-        case SlaveMode::ASSIGNED:
         case SlaveMode::UNADDRESSED:
         case SlaveMode::FAULT:
         default:
@@ -178,6 +181,9 @@ static bool isCommandLegal(I2cOpcode opcode, SlaveMode current_mode) {
 }
 
 ErrorCode processCommand(I2cOpcode opcode, uint8_t arg, SlaveContext& context) {
+    (void)arg;
+    context.lastEventOpcodeReceived = static_cast<uint32_t>(opcode);
+
     // Check legality
     if (!isCommandLegal(opcode, context.mode)) {
         return ErrorCode::ERR_ILLEGAL_STATE;
@@ -248,7 +254,12 @@ ErrorCode processCommand(I2cOpcode opcode, uint8_t arg, SlaveContext& context) {
 // ============================================================================
 
 void getStatusFrame(const SlaveContext& context, uint8_t frame[4]) {
-    I2CFrame::encodeStatus(context.mode, context.lastError, context.sensorBStable, frame);
+    I2cStatusFrame status{};
+    status.mode = static_cast<uint8_t>(context.mode);
+    status.sensor_b = context.sensorBStable ? 1 : 0;
+    status.last_event = static_cast<uint8_t>(context.lastEventOpcodeReceived);
+    status.error_code = static_cast<uint8_t>(context.lastError);
+    I2CFrame::encodeStatus(status, frame);
 }
 
 // ============================================================================
@@ -259,9 +270,6 @@ static void updateLed(SlaveContext& context) {
     LedIndicator::State led_state;
     
     switch (context.mode) {
-        case SlaveMode::EMPTY:
-            led_state = LedIndicator::State::IDLE_EMPTY;
-            break;
         case SlaveMode::IDLE_AWAITING_LOAD:
             led_state = LedIndicator::State::IDLE_EMPTY;
             break;

@@ -1,8 +1,9 @@
 #ifndef MASTER_CONTEXT_H
 #define MASTER_CONTEXT_H
 
-#include "../../shared/Protocol.h"
-#include "../include/Config.h"
+#include "Protocol.h"
+#include "Config.h"
+#include "../protocol/SerialProtocol.h"
 #include <cstdint>
 
 // ==============================================================================
@@ -45,7 +46,7 @@ struct MasterContext {
     Slave slaves[MAX_SLAVES];                           // Per-slave records
     uint8_t slaveCount;                                 // Number of enumerated slaves
     int8_t coupledSlaveIdx;                             // -1 if none; MAX-1-COUPLED invariant (FR-004)
-    uint8_t currentToolIdx;                             // Last loaded tool (-1 if none)
+    int8_t currentToolIdx;                              // Last loaded tool (-1 if none)
     
     // Request/response gating (FR-019/FR-025)
     struct {

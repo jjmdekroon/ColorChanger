@@ -5,10 +5,7 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
 
-// TODO: Configure servo pin for XIAO ESP32-C3
-#define SERVO_PIN 13
-
-static ESP32Servo g_servo;
+static Servo g_servo;
 
 #else
 // Stubs

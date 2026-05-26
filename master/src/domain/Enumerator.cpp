@@ -1,10 +1,11 @@
 #include "Enumerator.h"
-#include "../include/Config.h"
-#include "../src/transport/I2CBus.h"
-#include "../src/transport/SerialTransport.h"
-#include "../src/protocol/I2CFrame.h"
-#include "../src/hal/EnableChain.h"
-#include "../src/hal/DiagnosticLog.h"
+#include "Config.h"
+#include "../transport/I2CBus.h"
+#include "../transport/SerialTransport.h"
+#include "../protocol/I2CFrame.h"
+#include "../hal/EnableChain.h"
+#include "../hal/DiagnosticLog.h"
+#include <cstdio>
 
 #ifdef MASTER_BUILD
 #include <Arduino.h>
@@ -62,7 +63,7 @@ bool tick(MasterContext& context) {
                 g_state = EnumState::WAIT_FOR_RESPONSE;
                 g_state_deadline_ms = now_ms + 100;  // 100 ms for SET_ID response
             }
-            g_last_en_state = en_in_state;
+            g_last_en_state = en_in_now;
             
             // Timeout: no more pulses coming
             if (now_ms >= g_state_deadline_ms && g_en_pulse_count > 0) {
@@ -77,11 +78,9 @@ bool tick(MasterContext& context) {
             // with the next available ID
             
             uint8_t cmd_frame[4];
-            I2cOpcode opcode = I2cOpcode::SET_ID;
-            ErrorCode error = ErrorCode::OK;
-            
             // Encode SET_ID with assigned ID
-            I2CFrame::encodeCommand(opcode, g_pending_slave_id, 0, cmd_frame);
+            I2cCommandFrame set_id_cmd{static_cast<uint8_t>(I2cOpcode::SET_ID), g_pending_slave_id, 0, 0};
+            I2CFrame::encodeCommand(set_id_cmd, cmd_frame);
             
             // Try to write to slave at default address
             I2CBus::Result res = I2CBus::write(I2C_DEFAULT_ADDR, cmd_frame);
@@ -104,11 +103,12 @@ bool tick(MasterContext& context) {
             // Slave has processed SET_ID and is now at assigned address
             // Try to PING it to confirm transition
             
-            uint8_t assigned_addr = 0x50 + (g_pending_slave_id - 1);
+            uint8_t assigned_addr = I2C_BASE_ADDR + (g_pending_slave_id - 1);
             uint8_t cmd_frame[4];
             uint8_t status_frame[4];
             
-            I2CFrame::encodeCommand(I2cOpcode::PING, 0, 0, cmd_frame);
+            I2cCommandFrame ping_cmd{static_cast<uint8_t>(I2cOpcode::PING), 0, 0, 0};
+            I2CFrame::encodeCommand(ping_cmd, cmd_frame);
             I2CBus::Result res = I2CBus::write(assigned_addr, cmd_frame);
             
             if (res == I2CBus::Result::OK) {
@@ -189,7 +189,8 @@ bool detectTopologyChange(const MasterContext& context) {
         uint8_t addr = context.slaves[i].i2cAddress;
         
         // Single PING attempt (no retry, just detect absence)
-        I2CFrame::encodeCommand(I2cOpcode::PING, 0, 0, cmd_frame);
+        I2cCommandFrame ping_cmd{static_cast<uint8_t>(I2cOpcode::PING), 0, 0, 0};
+        I2CFrame::encodeCommand(ping_cmd, cmd_frame);
         I2CBus::Result res = I2CBus::write(addr, cmd_frame);
         
         if (res == I2CBus::Result::OK) {
@@ -203,7 +204,8 @@ bool detectTopologyChange(const MasterContext& context) {
     }
     
     // Check default address (0x60) for new unaddressed slave
-    I2CFrame::encodeCommand(I2cOpcode::PING, 0, 0, cmd_frame);
+    I2cCommandFrame ping_cmd{static_cast<uint8_t>(I2cOpcode::PING), 0, 0, 0};
+    I2CFrame::encodeCommand(ping_cmd, cmd_frame);
     I2CBus::Result res = I2CBus::write(0x60, cmd_frame);
     
     if (res == I2CBus::Result::OK) {

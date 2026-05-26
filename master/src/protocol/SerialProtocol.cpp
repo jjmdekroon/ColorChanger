@@ -1,6 +1,6 @@
 #include "SerialProtocol.h"
-#include "../include/Config.h"
-#include "../include/ErrorCodes.h"
+#include "Config.h"
+#include "ErrorCodes.h"
 #include <cctype>
 #include <cstdio>
 
@@ -10,14 +10,16 @@
 // Returns fail<n> codes for malformed input
 // ==============================================================================
 
-int parseLine(const char* line, size_t len, SerialCommand& out, ErrorCode& err,
-              uint8_t slaveCount) {
+namespace SerialProtocol {
+
+ErrorCode parseLine(const char* line, size_t len, SerialCommand& out, ErrorCode& err,
+                    uint8_t slaveCount) {
     err = ErrorCode::OK;
 
     // Bounds check
     if (len > SERIAL_LINE_MAX || len == 0) {
         err = ErrorCode::ERR_BAD_OPCODE;  // Line too long or empty
-        return -1;
+        return err;
     }
 
     // First character must be a command letter (uppercase only)
@@ -28,14 +30,14 @@ int parseLine(const char* line, size_t len, SerialCommand& out, ErrorCode& err,
         if (cmd == 'R') {
             out.type = SerialCommand::Type::R_RESET;
             out.argument = 0;
-            return 0;
+            return ErrorCode::OK;
         } else if (cmd == 'S') {
             out.type = SerialCommand::Type::S_STATUS;
             out.argument = 0;
-            return 0;
+            return ErrorCode::OK;
         } else {
             err = ErrorCode::ERR_BAD_OPCODE;
-            return -1;
+            return err;
         }
     }
 
@@ -53,7 +55,7 @@ int parseLine(const char* line, size_t len, SerialCommand& out, ErrorCode& err,
         } else {
             // Unknown command letter (uppercase)
             err = ErrorCode::ERR_BAD_OPCODE;
-            return -1;
+            return err;
         }
 
         // Parse the numeric argument
@@ -63,7 +65,7 @@ int parseLine(const char* line, size_t len, SerialCommand& out, ErrorCode& err,
             if (!isdigit(line[i])) {
                 // Non-digit character in argument
                 err = ErrorCode::ERR_ILLEGAL_STATE;  // Bad index format
-                return -1;
+                return err;
             }
             value = value * 10 + (line[i] - '0');
         }
@@ -71,17 +73,17 @@ int parseLine(const char* line, size_t len, SerialCommand& out, ErrorCode& err,
         // Bounds check: argument must be < slaveCount
         if (value >= slaveCount || value > 255) {
             err = ErrorCode::ERR_ILLEGAL_STATE;  // Bad index (out of range)
-            return -1;
+            return err;
         }
 
         out.type = type;
         out.argument = static_cast<uint8_t>(value);
-        return 0;
+        return ErrorCode::OK;
     }
 
     // Should not reach here
     err = ErrorCode::ERR_BAD_OPCODE;
-    return -1;
+    return err;
 }
 
 // ==============================================================================
@@ -153,3 +155,5 @@ size_t serializeResponse(const ResponseContext& ctx, char* out, size_t out_len) 
 
     return (written > 0) ? static_cast<size_t>(written) : 0;
 }
+
+}  // namespace SerialProtocol

@@ -1,5 +1,6 @@
 #include "SerialTransport.h"
-#include "../include/Config.h"
+#include "Config.h"
+#include <cstring>
 
 // Arduino Serial object (only available when compiled for ESP32)
 #ifdef MASTER_BUILD

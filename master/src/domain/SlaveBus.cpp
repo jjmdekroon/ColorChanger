@@ -1,9 +1,9 @@
 #include "SlaveBus.h"
 #include "RetryPolicy.h"
-#include "../include/Config.h"
-#include "../src/transport/I2CBus.h"
-#include "../src/protocol/I2CFrame.h"
-#include "../src/hal/DiagnosticLog.h"
+#include "Config.h"
+#include "../transport/I2CBus.h"
+#include "../protocol/I2CFrame.h"
+#include "../hal/DiagnosticLog.h"
 
 #ifdef MASTER_BUILD
 #include <Arduino.h>
@@ -46,7 +46,8 @@ bool tick(MasterContext& context) {
                 uint8_t cmd_frame[4];
                 uint8_t status_frame[4];
                 
-                I2CFrame::encodeCommand(I2cOpcode::PING, 0, 0, cmd_frame);
+                I2cCommandFrame ping_cmd{static_cast<uint8_t>(I2cOpcode::PING), 0, 0, 0};
+                I2CFrame::encodeCommand(ping_cmd, cmd_frame);
                 I2CBus::Result res = I2CBus::write(context.slaves[idx].i2cAddress, cmd_frame);
                 
                 if (res == I2CBus::Result::OK) {
@@ -60,13 +61,11 @@ bool tick(MasterContext& context) {
                     context.slaves[idx].busRetryCount = 0;  // Reset retry counter
                     
                     // Decode status frame
-                    SlaveMode mode;
-                    ErrorCode error;
-                    bool sensor_b;
-                    I2CFrame::decodeStatus(status_frame, mode, error, sensor_b);
-                    context.slaves[idx].mode = mode;
-                    context.slaves[idx].lastError = error;
-                    context.slaves[idx].sensorB = sensor_b;
+                    I2cStatusFrame status{};
+                    I2CFrame::decodeStatus(status_frame, status);
+                    context.slaves[idx].mode = static_cast<SlaveMode>(status.mode);
+                    context.slaves[idx].lastError = static_cast<ErrorCode>(status.error_code);
+                    context.slaves[idx].sensorB = status.sensor_b != 0;
                 } else {
                     // PING failed
                     context.slaves[idx].busRetryCount++;
@@ -137,8 +136,8 @@ I2CBus::Result sendCommand(MasterContext& context, uint8_t slave_idx, const uint
             break;  // Exhausted
         }
         // Log retry attempt (FR-020)
-        DiagnosticLog::logRetry(slave_idx, I2cOpcode::PING,
-                                ErrorCode::ERR_BUS_TIMEOUT, busAttempt + 1);
+        DiagnosticLog::logRetry(slave_idx, busAttempt + 1,
+                    static_cast<uint8_t>(ErrorCode::ERR_I2C_BUS));
 #ifdef MASTER_BUILD
         uint32_t deadline = millis() + RetryPolicy::nextBusBackoff(busAttempt);
         while (millis() < deadline) { /* spin */ }

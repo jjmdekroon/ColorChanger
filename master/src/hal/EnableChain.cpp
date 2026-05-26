@@ -1,5 +1,5 @@
 #include "EnableChain.h"
-#include "../include/Config.h"
+#include "Config.h"
 
 #ifdef MASTER_BUILD
 #include <Arduino.h>

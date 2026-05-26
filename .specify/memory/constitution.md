@@ -1,8 +1,12 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.5.0 → 2.0.0
-Rationale: MAJOR — the principle set is restructured. The previous ten
+Version change: 2.0.0 → 2.1.0
+Rationale: MINOR — added a new mandatory build-validation gate in Principle V
+and Development Workflow so implementation completion requires successful
+compilation evidence for affected targets.
+
+Historical context (2.0.0 restructure): MAJOR — the principle set is restructured. The previous ten
 principles (I–X) are collapsed into the five named principles requested by
 the maintainer. No operational rule is dropped: every concrete obligation
 from v1.5.0 is folded into one of the new principles. Because prior plans
@@ -268,6 +272,12 @@ Process gates (avoid building the wrong thing):
   Material-change happy paths and the feed-retry and bus-retry/backoff
   paths MUST be covered by integration tests (host-side simulation is
   acceptable where bench hardware is not).
+- **Build-First Completion Gate.** No implementation task is considered
+  complete until the affected build targets compile successfully. At
+  minimum, run `pio run -e master` for master changes and `pio run -e slave`
+  for slave changes; when shared protocol or cross-role behavior changes,
+  both firmware targets MUST build and host tests MUST run via
+  `pio test -e native`.
 
 Runtime fault handling (specified in the feature spec; the constitution
 fixes the *discipline*, the spec fixes the numbers):
@@ -360,6 +370,10 @@ remotely from a text log and a colour photograph of the LEDs.
   (c) the safety invariant in Principle II is upheld, and (d) no
   runtime-config or persistent-state shortcuts have been introduced
   (Principle III).
+- **Build validation**: Every PR and every `/speckit.implement` completion
+  report MUST include the exact build/test commands executed and their
+  result (`SUCCESS`/`FAILED`) for all affected targets. Missing build evidence
+  blocks merge.
 - **Hot-plug rule**: Code paths that mutate slave topology MUST be
   reachable only when the master is in `IDLE` (no active print, no
   in-flight material change). Tests MUST assert that broadcast queries are
@@ -401,4 +415,4 @@ Constitution Check both before Phase 0 research and after Phase 1 design.
 Any new violation discovered during implementation MUST be either resolved
 or escalated to a constitution amendment before merge.
 
-**Version**: 2.0.0 | **Ratified**: 2026-05-26 | **Last Amended**: 2026-05-26
+**Version**: 2.1.0 | **Ratified**: 2026-05-26 | **Last Amended**: 2026-05-26

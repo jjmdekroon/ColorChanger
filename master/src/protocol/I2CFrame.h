@@ -1,7 +1,7 @@
 #ifndef MASTER_I2CFRAME_H
 #define MASTER_I2CFRAME_H
 
-#include "../../shared/Protocol.h"
+#include "Protocol.h"
 #include <cstdint>
 
 // ==============================================================================

@@ -2,7 +2,7 @@
 #define SLAVE_ENUMERATIONRESPONDER_H
 
 #include "../../shared/Protocol.h"
-#include "../src/domain/SlaveContext.h"
+#include "SlaveContext.h"
 
 // ==============================================================================
 // Slave Enumeration Responder

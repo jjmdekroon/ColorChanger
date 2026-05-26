@@ -12,15 +12,15 @@
 // ==============================================================================
 
 #include <Arduino.h>
-#include "include/Config.h"
-#include "src/transport/I2CSlave.h"
-#include "src/transport/I2CFrame.h"
-#include "src/domain/SlaveContext.h"
-#include "src/domain/SlaveStateMachine.h"
-#include "src/hal/FilamentSensor.h"
-#include "src/hal/Gripper.h"
-#include "src/hal/LedIndicator.h"
-#include "src/hal/EnablePin.h"
+#include "Config.h"
+#include "transport/I2CSlave.h"
+#include "protocol/I2CFrame.h"
+#include "domain/SlaveContext.h"
+#include "domain/SlaveStateMachine.h"
+#include "hal/FilamentSensor.h"
+#include "hal/Gripper.h"
+#include "hal/LedIndicator.h"
+#include "hal/EnablePin.h"
 
 // Global context
 static SlaveContext g_context;
@@ -28,6 +28,7 @@ static SlaveContext g_context;
 // Forward declarations of callback handlers
 static void i2c_on_receive(const uint8_t buf[4], size_t len);
 static void i2c_on_request();
+static void serviceI2c();
 
 // ---- Setup (called once at boot) ----
 
@@ -43,7 +44,7 @@ void setup() {
     I2CSlave::init(i2c_on_receive, i2c_on_request);
     
     // Initialize slave context
-    g_context.mode = SlaveMode::EMPTY;
+    g_context.mode = SlaveMode::UNADDRESSED;
     g_context.enumState = EnumState::UNADDRESSED;
     g_context.id = 0;
     g_context.i2cAddress = 0x60;  // I2C_DEFAULT_ADDR
@@ -53,14 +54,14 @@ void setup() {
     // Boot classification (FR-010a):
     // After sensor debounces, the slave autonomously classifies itself:
     // - sensor_b = 1 (filament loaded) → READY (LED green)
-    // - sensor_b = 0 (empty) → EMPTY / IDLE_AWAITING_LOAD (LED off)
+    // - sensor_b = 0 (empty) → IDLE_AWAITING_LOAD (LED off)
     // 
     // Slave performs NO mechanical movement at boot.
     // No servo clamp, no feed-verify cycle.
     // Master handles post-enumeration positioning.
     
-    // Start in EMPTY state; FSM will auto-transition to READY if sensor active
-    g_context.mode = SlaveMode::EMPTY;
+    // Start in awaiting-load state; FSM can auto-transition to READY if sensor active.
+    g_context.mode = SlaveMode::IDLE_AWAITING_LOAD;
     
     // Initialize state machine
     SlaveStateMachine::init(g_context);
@@ -101,14 +102,13 @@ static void serviceI2c() {
     // Get last received command (if any)
     if (I2CSlave::getLastCommand(cmd_frame)) {
         // Decode command
-        I2cOpcode opcode;
-        uint8_t arg;
-        ErrorCode error;
-        
-        I2CFrame::decodeCommand(cmd_frame, opcode, arg, error);
+        I2cCommandFrame cmd{};
+        I2CFrame::decodeCommand(cmd_frame, cmd);
+        I2cOpcode opcode = static_cast<I2cOpcode>(cmd.opcode);
+        uint8_t arg = cmd.payload0;
         
         // Process command through FSM
-        ErrorCode result = SlaveStateMachine::processCommand(opcode, arg, g_context);
+        (void)SlaveStateMachine::processCommand(opcode, arg, g_context);
         
         // Prepare status frame for next on_request
         uint8_t status_frame[4];

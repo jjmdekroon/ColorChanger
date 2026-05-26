@@ -1,5 +1,5 @@
 #pragma once
-#include "../../master/include/Config.h"
+#include "Config.h"
 
 /**
  * RetryPolicy: pure backoff helpers (T061)
@@ -12,10 +12,10 @@
 namespace RetryPolicy {
 
 /// Number of bus retries (FR-017)
-constexpr uint8_t MAX_BUS_RETRIES = Config::MAX_BUS_RETRIES;
+constexpr uint8_t MAX_BUS_RETRIES = ::MAX_BUS_RETRIES;
 
 /// Number of feed retries (FR-011)
-constexpr uint8_t MAX_FEED_RETRIES = Config::MAX_FEED_RETRIES;
+constexpr uint8_t MAX_FEED_RETRIES = ::MAX_FEED_RETRIES;
 
 /**
  * Return the bus-retry backoff in ms for the given attempt (0-indexed).
@@ -25,7 +25,7 @@ constexpr uint8_t MAX_FEED_RETRIES = Config::MAX_FEED_RETRIES;
 inline uint32_t nextBusBackoff(uint8_t attempt) {
     constexpr uint8_t N = 3;
     uint8_t idx = (attempt < N) ? attempt : (N - 1);
-    return Config::BUS_RETRY_BACKOFF_MS[idx];
+    return ::BUS_RETRY_BACKOFF_MS[idx];
 }
 
 /**
@@ -36,7 +36,7 @@ inline uint32_t nextBusBackoff(uint8_t attempt) {
 inline uint32_t nextFeedBackoff(uint8_t attempt) {
     constexpr uint8_t N = 3;
     uint8_t idx = (attempt < N) ? attempt : (N - 1);
-    return Config::FEED_RETRY_BACKOFF_MS[idx];
+    return ::FEED_RETRY_BACKOFF_MS[idx];
 }
 
 /**

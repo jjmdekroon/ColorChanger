@@ -1,7 +1,7 @@
 #ifndef MASTER_DIAGNOSTICLOG_H
 #define MASTER_DIAGNOSTICLOG_H
 
-#include "../../shared/Protocol.h"
+#include "Protocol.h"
 #include <cstdint>
 #include <ctime>
 

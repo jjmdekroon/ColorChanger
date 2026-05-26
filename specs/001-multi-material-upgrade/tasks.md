@@ -8,7 +8,7 @@ description: "Tasks for Multi-material Upgrade voor Klipper 3D-printer"
 
 **Prerequisites**: [plan.md](plan.md), [spec.md](spec.md), [research.md](research.md), [data-model.md](data-model.md), [contracts/usb-serial.md](contracts/usb-serial.md), [contracts/i2c-frames.md](contracts/i2c-frames.md), [quickstart.md](quickstart.md)
 
-**Tests**: Included. The plan (Constitution Check, Principle V) and `research.md` (R-012) explicitly mandate test-first contract tests and host-side FSM/retry/parser tests on the PlatformIO `native` environment before production code is written.
+**Tests**: Included. The plan (Constitution Check, Principle V) and `research.md` (R-012) explicitly mandate test-first contract tests and host-side FSM/retry/parser tests on the PlatformIO `native` environment before production code is written. Build validation is also mandatory before closing tasks: run `pio run -e master` for master changes, `pio run -e slave` for slave changes, and include `pio test -e native` for shared/cross-role changes.
 
 **Organization**: Tasks are grouped by user story (US1 — material change, US2 — hot-plug, US3 — fault detection) to enable independent implementation and bench validation per [quickstart.md](quickstart.md).
 
@@ -188,6 +188,7 @@ Embedded firmware project per [plan.md](plan.md) §"Project Structure":
 - [X] T074 [P] Add CI configuration at [.github/workflows/ci.yml](../../.github/workflows/ci.yml) (or document the equivalent manual command in [README.md](../../README.md)) to build `master`, `slave`, and `native` envs and run `pio test -e native` on every PR — guarantees the Principle V contract tests stay green.
 - [X] T075 [P] Add a top-level [README.md](../../README.md) describing the project structure (links to [specs/001-multi-material-upgrade/](.) and key contracts), how to flash master/slave, how to include `mmu_macros.cfg` in `printer.cfg`, and how to run host tests.
 - [ ] T076 Run the full [quickstart.md](quickstart.md) on bench hardware: bring-up checks (3 steps), User Story 1 (5 steps), User Story 2 (5 steps), User Story 3 (5 steps), I2C bus-fault recovery (3 steps), teardown. Capture results against SC-001…SC-005 and the FR-012 print-progress check (T072) in [test/integration/README.md](../../test/integration/README.md).
+- [X] T077 Execute and record build validation for affected targets before sign-off: `pio run -e master` (master changes), `pio run -e slave` (slave changes), and `pio test -e native` for shared/cross-role changes. Append command + status evidence to [IMPLEMENTATION_SESSION_SUMMARY.md](../../IMPLEMENTATION_SESSION_SUMMARY.md). (2026-05-26: slave-only hotfix validated with `pio run -e slave` and `pio run -e slave --target upload --upload-port COM6` both SUCCESS.)
 
 ---
 
@@ -283,8 +284,8 @@ After Phase 2 completes:
 - **Phase 3 — US1 Material change (P1 / MVP)**: 16 tasks (T034–T048, incl. T036a).
 - **Phase 4 — US2 Hot-plug (P2)**: 8 tasks (T049–T056).
 - **Phase 5 — US3 Fault detection (P3)**: 12 tasks (T057–T068).
-- **Phase 6 — Polish & validation**: 8 tasks (T069–T076).
-- **Total**: **77 tasks**.
+- **Phase 6 — Polish & validation**: 9 tasks (T069–T077).
+- **Total**: **78 tasks**.
 
 ### Per-Story Task Allocation
 
@@ -310,7 +311,7 @@ Phases 1 → 2 → 3 (T001–T048) deliver the P1 user story end-to-end: a worki
 
 ### Format Validation
 
-All 77 tasks follow the strict checklist format: every line begins with `- [ ]`, carries a sequential `T<NNN>` id (with T036a as an inserted addendum for FR-021/FR-022 master-flow coverage), includes a `[P]` marker on parallelisable tasks, carries a `[US1]` / `[US2]` / `[US3]` story label on every Phase 3/4/5 task (and NO story label on Setup / Foundational / Polish tasks), and names an exact file path. Verified.
+All 78 tasks follow the strict checklist format: every line begins with `- [ ]`, carries a sequential `T<NNN>` id (with T036a as an inserted addendum for FR-021/FR-022 master-flow coverage), includes a `[P]` marker on parallelisable tasks, carries a `[US1]` / `[US2]` / `[US3]` story label on every Phase 3/4/5 task (and NO story label on Setup / Foundational / Polish tasks), and names an exact file path. Verified.
 
 ---
 

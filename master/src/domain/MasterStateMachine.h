@@ -1,9 +1,9 @@
 #ifndef MASTER_STATEMACHINE_H
 #define MASTER_STATEMACHINE_H
 
-#include "../../shared/Protocol.h"
+#include "Protocol.h"
 #include "MasterContext.h"
-#include "../src/protocol/SerialProtocol.h"
+#include "../protocol/SerialProtocol.h"
 
 // ==============================================================================
 // Master State Machine
@@ -68,7 +68,7 @@ inline bool isStatusQueryAllowed() { return true; }
  * @param input     Command that triggered transition
  * @return          Next expected state
  */
-MasterState getNextState(MasterState current, SerialCommand::CommandType input);
+MasterState getNextState(MasterState current, SerialCommand::Type input);
 
 }  // namespace MasterStateMachine
 

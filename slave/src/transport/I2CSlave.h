@@ -2,6 +2,7 @@
 #define SLAVE_I2CSLAVE_H
 
 #include "../../shared/Protocol.h"
+#include <cstddef>
 #include <cstdint>
 
 // ==============================================================================

@@ -45,14 +45,17 @@ specs/001-multi-material-upgrade/
 ### Master
 
 ```sh
-pio run -e master --target upload --upload-port /dev/ttyUSB0
+pio run -e master --target upload --upload-port COMx
 ```
 
 ### Slave (flash one board at a time)
 
 ```sh
-pio run -e slave --target upload --upload-port /dev/ttyUSB1
+pio run -e slave --target upload --upload-port COMx
 ```
+
+Use the COM port that matches your board in Windows (for example, list ports in
+PowerShell with `Get-CimInstance Win32_SerialPort | Select-Object DeviceID, Name`).
 
 All slaves share the same firmware image. Identity is assigned at runtime via
 the EN-chain enumeration sequence (see
