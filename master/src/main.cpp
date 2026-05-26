@@ -9,9 +9,20 @@
 #include "src/transport/I2CBus.h"
 #include "src/protocol/SerialProtocol.h"
 #include "src/domain/MasterContext.h"
+#include "src/domain/MasterStateMachine.h"
+#include "src/domain/SlaveBus.h"
+#include "src/hal/Stepper.h"
+#include "src/hal/EnableChain.h"
+#include "src/hal/DiagnosticLog.h"
 
 // Global context (per-loop state)
 static MasterContext g_context;
+
+// Forward declarations of loop subfunctions
+static void serviceTransport();
+static void serviceProtocol();
+static void tickFsm();
+static void driveHardware();
 
 // ---- Setup (called once at boot) ----
 
@@ -22,6 +33,11 @@ void setup() {
     // Initialize I2C bus (communication with slave modules)
     I2CBus::init();
     
+    // Initialize HAL
+    Stepper::init();
+    EnableChain::init();
+    DiagnosticLog::init();
+    
     // Initialize master context
     g_context.state = MasterState::BOOT;
     g_context.slaveCount = 0;
@@ -30,11 +46,9 @@ void setup() {
     g_context.broadcastSuspended = false;
     g_context.lastBroadcastMs = millis();
     
-    // TODO: Initialize HAL (Stepper, EnableChain, DiagnosticLog, LedIndicator)
-    // TODO: Run enumeration until complete (move to IDLE state)
-    
-    // Transition to ENUMERATE_SLAVES
-    g_context.state = MasterState::ENUMERATE_SLAVES;
+    // Initialize state machine
+    MasterStateMachine::init(g_context);
+    SlaveBus::start(g_context);
 }
 
 // ---- Main Loop ----
@@ -43,7 +57,7 @@ void loop() {
     // Service USB-serial: read incoming commands
     serviceTransport();
     
-    // Parse received command
+    // Parse received command and route to FSM
     serviceProtocol();
     
     // FSM tick: process state machine transitions
@@ -52,41 +66,71 @@ void loop() {
     // Drive hardware: stepper pulses, servo updates, etc.
     driveHardware();
     
-    // Periodic polling: PING slaves for status (gated by broadcast logic)
-    tickPolling();
-    
     // Yield to watchdog/other tasks
     yield();
 }
 
-// ---- Helper Functions (loop subfunctions) ----
+// ============================================================================
+// Loop Subfunctions (T044: Wire parser → FSM → responder)
+// ============================================================================
 
-void serviceTransport() {
+/**
+ * Service transport: poll for incoming serial commands
+ * Non-blocking line-by-line buffering
+ */
+static void serviceTransport() {
     // Poll for a complete line from USB-serial
-    char line_buf[64];
-    size_t line_len;
+    // Lines are buffered internally by SerialTransport
+}
+
+/**
+ * Service protocol: parse commands and route to FSM
+ * Handles request/response gating per FR-019/FR-024/FR-025
+ */
+static void serviceProtocol() {
+    static char line_buf[64];
+    static size_t line_len;
     
+    // Check if we have a line ready
     if (SerialTransport::pollLine(line_buf, sizeof(line_buf), line_len)) {
-        // We have a complete line - could parse it next
-        // For now, just consume it
+        // Parse the line
+        SerialCommand cmd;
+        ErrorCode parse_err;
+        
+        ErrorCode err = SerialProtocol::parseLine(line_buf, line_len, cmd, parse_err, g_context.slaveCount);
+        
+        if (err != ErrorCode::OK) {
+            // Parse error: respond immediately
+            ResponseContext resp;
+            resp.response_type = ResponseContext::ResponseType::FAIL;
+            resp.error_code = err;
+            
+            char response_buf[128];
+            SerialProtocol::serializeResponse(resp, response_buf, sizeof(response_buf));
+            SerialTransport::writeLine(response_buf);
+        } else {
+            // Parse success: route to FSM
+            MasterStateMachine::handleSerialCommand(g_context, cmd);
+        }
     }
 }
 
-void serviceProtocol() {
-    // TODO: Integrate parser and responder here
+/**
+ * FSM tick: drive the state machine
+ * Process transitions, timeouts, and mechanical actions
+ */
+static void tickFsm() {
+    MasterStateMachine::tick(g_context, millis());
 }
 
-void tickFsm() {
-    // TODO: Master state machine tick
-    // - Process in-flight commands
-    // - Manage state transitions
-    // - Timeout handling
-}
-
-void driveHardware() {
-    // TODO: Update hardware (stepper, servo, LED)
-}
-
-void tickPolling() {
-    // TODO: Periodic PING loop when IDLE and broadcast not suspended
+/**
+ * Drive hardware: update stepper, servo, LED, etc.
+ * Non-blocking updates based on millis() cadence
+ */
+static void driveHardware() {
+    // Tick stepper for pulse generation
+    Stepper::tick();
+    
+    // Tick slave bus for periodic polling
+    SlaveBus::tick(g_context);
 }
