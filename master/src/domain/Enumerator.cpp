@@ -4,6 +4,7 @@
 #include "../src/transport/SerialTransport.h"
 #include "../src/protocol/I2CFrame.h"
 #include "../src/hal/EnableChain.h"
+#include "../src/hal/DiagnosticLog.h"
 
 #ifdef MASTER_BUILD
 #include <Arduino.h>
@@ -140,6 +141,12 @@ bool tick(MasterContext& context) {
         
         case EnumState::DONE: {
             // Enumeration complete
+            // T056: Emit diagnostic line with slave count (FR-020)
+            char diag_line[64];
+            snprintf(diag_line, sizeof(diag_line), "# %lu M ENUM OK %d\n", 
+                     millis(), context.slaveCount);
+            SerialTransport::writeLine(diag_line);
+            
             // Move master context to next state
             context.state = MasterState::SYNC_STATE;
             return true;
@@ -167,6 +174,91 @@ const char* getState() {
             return "DONE";
     }
     return "UNKNOWN";
+}
+
+bool detectTopologyChange(const MasterContext& context) {
+    // FR-008: Detect topology changes while idle
+    // Lightweight PING check with minimal retry (bus-retry = 1 only)
+    // to distinguish removal from transient bus error
+    
+    uint8_t cmd_frame[4];
+    uint8_t status_frame[4];
+    
+    // Check all known slave addresses
+    for (uint8_t i = 0; i < context.slaveCount; i++) {
+        uint8_t addr = context.slaves[i].i2cAddress;
+        
+        // Single PING attempt (no retry, just detect absence)
+        I2CFrame::encodeCommand(I2cOpcode::PING, 0, 0, cmd_frame);
+        I2CBus::Result res = I2CBus::write(addr, cmd_frame);
+        
+        if (res == I2CBus::Result::OK) {
+            res = I2CBus::request(addr, status_frame);
+        }
+        
+        // If this slave no longer responds → REMOVAL detected
+        if (res != I2CBus::Result::OK) {
+            return true;  // Topology changed
+        }
+    }
+    
+    // Check default address (0x60) for new unaddressed slave
+    I2CFrame::encodeCommand(I2cOpcode::PING, 0, 0, cmd_frame);
+    I2CBus::Result res = I2CBus::write(0x60, cmd_frame);
+    
+    if (res == I2CBus::Result::OK) {
+        res = I2CBus::request(0x60, status_frame);
+        
+        // If default address responds → NEW SLAVE detected
+        if (res == I2CBus::Result::OK) {
+            return true;  // Topology changed
+        }
+    }
+    
+    // No topology change detected
+    return false;
+}
+
+bool reEnumerate(MasterContext& context) {
+    // FR-015: Full re-enumeration on topology change
+    // FR-016: Reset retry counters and clear coupling state
+    
+    // Clear all known slaves
+    for (uint8_t i = 0; i < context.slaveCount; i++) {
+        context.slaves[i].id = 0;
+        context.slaves[i].i2cAddress = 0xFF;
+        context.slaves[i].online = false;
+        context.slaves[i].feedRetryCount = 0;
+        context.slaves[i].busRetryCount = 0;
+        context.slaves[i].lastError = ErrorCode::OK;
+    }
+    context.slaveCount = 0;
+    context.coupledSlaveIdx = -1;
+    context.currentToolIdx = -1;
+    
+    // De-assert EN_OUT to reset all slaves
+    EnableChain::deassertOutput();
+    
+    // Wait a bit for slaves to reset
+    uint32_t reset_deadline = millis() + 100;
+    while (millis() < reset_deadline) {
+        // Busy-wait or yield
+    }
+    
+    // Start enumeration from scratch
+    start(context);
+    
+    // Run enumeration to completion (blocking)
+    uint32_t enum_deadline = millis() + 5000;  // 5 second enum timeout
+    while (!isComplete(context) && millis() < enum_deadline) {
+        tick(context);
+        // Yield to let other tasks run if on Arduino
+        #ifdef MASTER_BUILD
+        yield();
+        #endif
+    }
+    
+    return isComplete(context);
 }
 
 }  // namespace Enumerator

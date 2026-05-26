@@ -4,6 +4,7 @@
 #include "../src/transport/SerialTransport.h"
 #include "../src/protocol/I2CFrame.h"
 #include "../src/domain/SlaveBus.h"
+#include "../src/domain/Enumerator.h"
 #include "../src/hal/Stepper.h"
 #include "../src/hal/DiagnosticLog.h"
 
@@ -43,8 +44,26 @@ void init(MasterContext& context) {
 // ============================================================================
 
 bool tick(MasterContext& context, uint32_t now_ms) {
+    // Check for state transitions
+    if (context.state != g_machine.current_state) {
+        g_machine.previous_state = g_machine.current_state;
+        g_machine.current_state = context.state;
+        g_machine.state_entered_ms = now_ms;
+    }
+    
     // Update context state to match internal FSM
     context.state = g_machine.current_state;
+    
+    // Broadcast suspension/resumption on state change
+    if (g_machine.previous_state != g_machine.current_state) {
+        if (g_machine.current_state == MasterState::IDLE) {
+            // Returning to IDLE: resume broadcast (FR-013a)
+            context.broadcastSuspended = false;
+        } else if (g_machine.previous_state == MasterState::IDLE) {
+            // Leaving IDLE: suspend broadcast (FR-013a)
+            context.broadcastSuspended = true;
+        }
+    }
     
     // If a response is ready, emit it
     if (g_machine.response_ready) {
@@ -83,36 +102,78 @@ bool tick(MasterContext& context, uint32_t now_ms) {
         case MasterState::IDLE:
             // Idle: periodic polling via SlaveBus::tick()
             SlaveBus::tick(context);
+            
+            // FR-013/FR-013a: Periodic broadcast & topology change detection
+            // Only while idle and not suspended
+            if (!context.broadcastSuspended && 
+                (now_ms - context.lastBroadcastMs >= Config::BROADCAST_INTERVAL_MS)) {
+                
+                // Detect topology changes (slave added/removed)
+                if (Enumerator::detectTopologyChange(context)) {
+                    // Topology changed: trigger full re-enumeration (FR-015)
+                    Enumerator::reEnumerate(context);
+                    // Re-enumeration resets retry counters (FR-016)
+                    context.lastBroadcastMs = now_ms;
+                } else {
+                    // No change, just update broadcast timestamp
+                    context.lastBroadcastMs = now_ms;
+                }
+            }
+            
             // Waiting for command via serial
             break;
         
         case MasterState::VALIDATE:
+            // Entering VALIDATE: suspend broadcast (FR-013a)
+            if (context.state != g_machine.previous_state) {
+                context.broadcastSuspended = true;
+            }
             // Validate preconditions for current command
             // Then transition to appropriate process
             validateCommand(context, now_ms);
             break;
         
         case MasterState::LOAD_SLAVE:
+            // Entering LOAD_SLAVE: suspend broadcast (FR-013a)
+            if (context.state != g_machine.previous_state) {
+                context.broadcastSuspended = true;
+            }
             // Process 1: GRIP action on target slave
             processLoadSlave(context, now_ms);
             break;
         
         case MasterState::EJECT_SLAVE:
+            // Entering EJECT_SLAVE: suspend broadcast (FR-013a)
+            if (context.state != g_machine.previous_state) {
+                context.broadcastSuspended = true;
+            }
             // Process 2: RELEASE action on old slave
             processEjectSlave(context, now_ms);
             break;
         
         case MasterState::LOAD_PRINTER:
+            // Entering LOAD_PRINTER: suspend broadcast (FR-013a)
+            if (context.state != g_machine.previous_state) {
+                context.broadcastSuspended = true;
+            }
             // Process 3: Stepper feed + sensor verify
             processLoadPrinter(context, now_ms);
             break;
         
         case MasterState::UNLOAD_PRINTER:
+            // Entering UNLOAD_PRINTER: suspend broadcast (FR-013a)
+            if (context.state != g_machine.previous_state) {
+                context.broadcastSuspended = true;
+            }
             // Process 4: Stepper retract + sensor verify
             processUnloadPrinter(context, now_ms);
             break;
         
         case MasterState::RESET:
+            // Entering RESET: suspend broadcast (FR-013a)
+            if (context.state != g_machine.previous_state) {
+                context.broadcastSuspended = true;
+            }
             // Reset: release all slaves, return to IDLE
             processReset(context, now_ms);
             break;
@@ -124,6 +185,38 @@ bool tick(MasterContext& context, uint32_t now_ms) {
     }
     
     return context.state != MasterState::IDLE;
+}
+
+// ============================================================================
+// Helper: Broadcast MODE commands to gate insertions (T054, FR-005a back-half)
+// ============================================================================
+
+static void broadcastModeReady(MasterContext& context) {
+    // FR-005a back-half: When leaving IDLE, broadcast MODE_READY to IDLE_AWAITING_LOAD
+    // so operator insertions during a print aren't picked up
+    uint8_t cmd_frame[4];
+    
+    for (uint8_t i = 0; i < context.slaveCount; i++) {
+        if (context.slaves[i].mode == SlaveMode::IDLE_AWAITING_LOAD) {
+            // Send MODE_READY to gate insertions
+            I2CFrame::encodeCommand(I2cOpcode::MODE_READY, 0, 0, cmd_frame);
+            SlaveBus::sendCommand(i, cmd_frame);
+        }
+    }
+}
+
+static void broadcastModeAwaitingLoad(MasterContext& context) {
+    // FR-005a back-half: When returning to IDLE, broadcast MODE_AWAITING_LOAD to EMPTY slaves
+    // so they're ready to accept insertions again
+    uint8_t cmd_frame[4];
+    
+    for (uint8_t i = 0; i < context.slaveCount; i++) {
+        if (context.slaves[i].mode == SlaveMode::EMPTY) {
+            // Send MODE_AWAITING_LOAD to allow insertions
+            I2CFrame::encodeCommand(I2cOpcode::MODE_AWAITING_LOAD, 0, 0, cmd_frame);
+            SlaveBus::sendCommand(i, cmd_frame);
+        }
+    }
 }
 
 // ============================================================================
@@ -162,10 +255,12 @@ static void validateCommand(MasterContext& context, uint32_t now_ms) {
             // Proceed to Process 1 or 4 depending on current state
             if (context.coupledSlaveIdx >= 0) {
                 // Already have a tool loaded; need to unload first
+                broadcastModeReady(context);  // T054: Gate insertions before leaving IDLE
                 context.state = MasterState::UNLOAD_PRINTER;
                 g_machine.current_state = MasterState::UNLOAD_PRINTER;
             } else {
                 // No tool loaded; go straight to load
+                broadcastModeReady(context);  // T054: Gate insertions before leaving IDLE
                 context.state = MasterState::LOAD_SLAVE;
                 g_machine.current_state = MasterState::LOAD_SLAVE;
             }
@@ -453,6 +548,13 @@ static void processReset(MasterContext& context, uint32_t now_ms) {
     g_machine.pending_response.response_type = ResponseContext::ResponseType::OK;
     g_machine.response_ready = true;
     context.state = MasterState::IDLE;
+    g_machine.current_state = MasterState::IDLE;
+    
+    // T054: Broadcast MODE_AWAITING_LOAD to re-enable insertions
+    broadcastModeAwaitingLoad(context);
+    
+    g_machine.current_state = MasterState::IDLE;
+}
     g_machine.current_state = MasterState::IDLE;
 }
 

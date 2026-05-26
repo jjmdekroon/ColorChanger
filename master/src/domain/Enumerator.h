@@ -47,6 +47,26 @@ bool isComplete(const MasterContext& context);
  */
 const char* getState();
 
+/**
+ * Detect topology changes while idle (FR-008, FR-013a)
+ * Called from idle broadcast loop to detect slave additions/removals
+ * Lightweight: PINGs only (bus-retry budget = 1, no full re-enum trigger)
+ *
+ * @param context   Master context with current slave roster
+ * @return          true if topology changed (addition or removal detected)
+ */
+bool detectTopologyChange(const MasterContext& context);
+
+/**
+ * Perform full re-enumeration on topology change (FR-015, FR-016)
+ * Drops all known addresses, re-runs chain handshake from scratch
+ * Resets retry counters, clears coupledSlaveIdx/currentToolIdx
+ *
+ * @param context   Master context to rebuild
+ * @return          true if re-enumeration succeeded, false if failed
+ */
+bool reEnumerate(MasterContext& context);
+
 }  // namespace Enumerator
 
 #endif  // MASTER_ENUMERATOR_H
