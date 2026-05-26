@@ -115,6 +115,11 @@ host-test-environment.
   geserialiseerd (FR-019); materiaalwissel is sequentieel met sensorverificatie
   (FR-004a). De "max-1-coupled"-invariant wordt in
   `MasterStateMachine::handleCoupleRequest()` gecheckt vóór enige I2C-`GRIP`-uitgifte.
+  Autonome load-trigger (FR-005a) wordt strikt gegate op `MasterState == IDLE`: bij
+  het verlaten van `IDLE` zet de master alle lege slaves naar `MODE_READY` (passief,
+  insertion-disabled) en bij terugkeer naar `IDLE` weer naar `MODE_AWAITING_LOAD`;
+  de transitie van een slave naar `READY` door operator-insteek wordt door reguliere
+  polling waargenomen en levert geen extra USB-serial respons op naar Klipper.
   Bring-up exceptions: peripheral-reset-pulsen in `setup()` en de bit-bang van WS2812
   binnen vetted library; beide gedocumenteerd.
 

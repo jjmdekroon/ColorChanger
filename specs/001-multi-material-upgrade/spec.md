@@ -83,6 +83,7 @@ Als operator wil ik direct een duidelijke melding krijgen wanneer filament niet 
 - **FR-004**: Het systeem MUST bij materiaalwissel uitsluitend het geselecteerde slave-kanaal activeren en andere kanalen gedeactiveerd houden.
 - **FR-004a**: Het systeem MUST een materiaalwissel uitvoeren als sequentieel proces met sensorverificatie: (1) deactiveer huidig actief kanaal (klem loslaten), (2) verifieer via filamentsensor dat filament verwijderd is, (3) activeer doelkanaal (klem aandrukken), (4) verifieer via filamentsensor dat nieuw filament aanwezig is. Indien stap 2 of 4 niet binnen de veilige tijdsgrens (FR-007) bevestigd wordt, MUST de wissel falen en een toevoerfout volgens FR-011 worden gestart.
 - **FR-005**: Het systeem MUST per slave de klemstatus beheersen zodat filament alleen wordt aangedrukt wanneer dat kanaal actief is.
+- **FR-005a**: Een slave die in `IDLE_AWAITING_LOAD` (EMPTY, servo open) staat MUST een filament-insteek door de operator autonoom detecteren via activatie van zijn filamentsensor en deze gebeurtenis behandelen als een impliciet `L<n>`-commando voor dat kanaal: de slave knijpt de servo, voert de LOADING-transient uit en eindigt in `READY`. De master MUST deze autonome trigger uitsluitend toestaan wanneer hij in `IDLE` is (geen in-flight `T<nr>`/`L<n>`/`U<n>`/`R`-procedure). Wanneer de master niet idle is, MUST hij actief verhinderen dat een lege slave naar `IDLE_AWAITING_LOAD` overgaat door die slave in een passieve mode (`MODE_READY`-equivalent of expliciete "insertion-disabled"-mode) te houden tot de master terugkeert naar `IDLE`. De master MUST de impliciete `L<n>` via reguliere polling waarnemen, zijn interne bookkeeping bijwerken en een diagnose-regel (FR-020) emitten; er wordt GEEN extra USB-serial respons naar Klipper gestuurd (de impliciete trigger is operator-initiated, niet host-initiated).
 - **FR-006**: Het systeem MUST de filament sensorstatus na het klemmechanisme gebruiken om te bevestigen dat filament daadwerkelijk wordt doorgevoerd.
 - **FR-007**: Het systeem MUST een toevoerfout detecteren en melden wanneer filamentdetectie uitblijft binnen een veilige tijdsgrens (standaard: 5 seconden na het toevoercommando). Deze tijdsgrens, evenals retry-aantal (FR-011) en backoff-tijden (FR-011/FR-017), zijn compile-time constanten in de firmware; aanpassen vereist een nieuwe firmware-build en flash. Er is geen runtime-configuratiekanaal.
 - **FR-008**: Het systeem MUST hot-plug van slaves ondersteunen in idle-toestand, inclusief automatische registratie bij aansluiten en deregistratie bij loskoppelen.
@@ -128,6 +129,10 @@ Als operator wil ik direct een duidelijke melding krijgen wanneer filament niet 
 - **SC-005**: Onjuiste kanaalactivatie (ander kanaal dan geselecteerd) komt voor in minder dan 1 op 1.000 materiaalwissels.
 
 ## Clarifications
+
+### Session 2026-05-26 (Continued 4)
+
+- Q: Hoe wordt een handmatige filament-insteek in een lege slave geïnitieerd — vereist dit een expliciet `L<n>`-commando vanuit Klipper of mag de slave het autonoom oppikken? → A: Autonoom oppikken. Een slave die in `IDLE_AWAITING_LOAD` staat behandelt sensor-activatie als een impliciet `L<n>`: hij grijpt en gaat naar `READY`. Toegestaan uitsluitend wanneer de master in `IDLE` is; tijdens een in-flight `T<nr>`/`L<n>`/`U<n>`/`R` houdt de master alle lege slaves in een passieve mode zodat insteek niet wordt opgepikt. De master neemt de transitie waar via reguliere polling, werkt bookkeeping bij en emit een diagnose-regel (FR-020); er gaat geen aanvullend bericht naar Klipper.
 
 ### Session 2026-05-26 (Continued 3)
 
