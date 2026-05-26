@@ -113,24 +113,38 @@ size_t serializeResponse(const ResponseContext& ctx, char* out, size_t out_len) 
             break;
         }
 
-        case ResponseType::STATUS:
+        case ResponseType::STATUS: {
             // S command response: state=<state> coupled=<index|none> slaves=<n> tool=<index|none>
-            {
-                const char* state_name = "UNKNOWN";
-                
-                written = snprintf(
-                    out, out_len,
-                    "state=%s coupled=%s slaves=%u tool=%s",
-                    state_name,
-                    (ctx.state_info.coupled_slave_idx >= 0)
-                        ? "0"  // TODO: format actual index
-                        : "none",
-                    ctx.state_info.slave_count,
-                    (ctx.state_info.current_tool_idx >= 0)
-                        ? "0"  // TODO: format actual index
-                        : "none");
+            // Format: state=<number> coupled=<index or "none"> slaves=<count> tool=<index or "none">
+            
+            // Format coupled and tool fields
+            const char* coupled_str;
+            char coupled_buf[8];
+            if (ctx.state_info.coupled_slave_idx >= 0) {
+                snprintf(coupled_buf, sizeof(coupled_buf), "%d", ctx.state_info.coupled_slave_idx);
+                coupled_str = coupled_buf;
+            } else {
+                coupled_str = "none";
             }
+            
+            const char* tool_str;
+            char tool_buf[8];
+            if (ctx.state_info.current_tool_idx >= 0) {
+                snprintf(tool_buf, sizeof(tool_buf), "%d", ctx.state_info.current_tool_idx);
+                tool_str = tool_buf;
+            } else {
+                tool_str = "none";
+            }
+            
+            written = snprintf(
+                out, out_len,
+                "state=%d coupled=%s slaves=%u tool=%s",
+                ctx.state_info.master_state,
+                coupled_str,
+                ctx.state_info.slave_count,
+                tool_str);
             break;
+        }
 
         default:
             written = snprintf(out, out_len, "fail255");
