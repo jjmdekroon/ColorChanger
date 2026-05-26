@@ -1,6 +1,6 @@
 # Implementation Plan: Multi-material Upgrade voor Klipper 3D-printer
 
-**Branch**: `001-create-feature-branch` | **Date**: 2026-05-26 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-multi-material-upgrade` | **Date**: 2026-05-26 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from [specs/001-multi-material-upgrade/spec.md](spec.md)
 
@@ -65,7 +65,7 @@ host-test-environment.
 **Performance Goals**:
 - I2C-pollcyclus per slave ≤ 50 ms (`POLL_SLAVE_INTERVAL_MS` uit `TECHNICAL_DESIGN.md`)
 - USB-serial: regelgebaseerde request/response, latency van `T<nr>`→`ok` gedomineerd door fysiek laadtraject; geen harde latency-eis
-- Materiaalwissel-totaaltijd ≤ 30 s in nominale gevallen (impliciet uit `BUSY_RETRY_MAX × BUSY_RETRY_HINT_MS = 60 × 500 ms`)
+- Klipper-zijde `busy`-retry-budget bedraagt `BUSY_RETRY_MAX × BUSY_RETRY_HINT_MS = 60 × 500 ms = 30 s` — dit is een Klipper-host worst-case wachttijd voordat `PAUSE` wordt aangeroepen, GEEN nominaal latency-doel voor een materiaalwissel.
 - FSM-tick: elke `loop()`-iteratie run-to-completion, geen blocking call > 1 ms in steady state
 - Feed-validatie binnen FR-007: standaard 5 s safe-feed time bound
 
@@ -83,7 +83,7 @@ host-test-environment.
 - Aantal slaves: geen harde bovengrens in spec; firmware-cap `MAX_SLAVES = 16` in `Config.h` (gemotiveerd door I2C-adresruimte 0x50…0x5F en RAM-budget)
 - Codebase: ~2k–4k regels C++ totaal (master + slave + shared) verwacht; ruim binnen ESP32-C3 flash (4 MB)
 - Klipper-macro's: ~5 macro's, < 200 regels Klipper-config
-- Test scope: alle 19 functionele requirements (FR-001…FR-020) + 5 success criteria (SC-001…SC-005)
+- Test scope: alle functionele requirements FR-001…FR-025 inclusief de lettered varianten (FR-003-MAP/003a/003b/003c, FR-004a, FR-005a, FR-010a, FR-011a, FR-013a) — ~30 buildable items — plus 5 success criteria (SC-001…SC-005). FR-018 is een expliciete non-requirement (out-of-scope statement) en wordt niet getest.
 
 ## Constitution Check
 
