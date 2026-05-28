@@ -1,11 +1,8 @@
 #include "EnablePin.h"
+#include "../include/Config.h"
 
 #ifdef SLAVE_BUILD
 #include <Arduino.h>
-
-// TODO: Configure enable pins for XIAO ESP32-C3
-#define EN_IN_PIN   15
-#define EN_OUT_PIN  16
 
 #else
 // Stubs

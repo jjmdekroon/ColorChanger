@@ -37,27 +37,26 @@ constexpr uint32_t FEED_TIMEOUT_MS = 5000;
 constexpr uint8_t I2C_DEFAULT_ADDR = 0x60;
 
 // ---- I/O Pin Assignments ----
-// TODO: finalize pin assignments during bench-wiring phase
-// Current values are placeholders; verify against ESP32-C3 pinout and physical wiring
+// GPIO mapping for the current XIAO ESP32-C3 firmware wiring.
 
 // LED pin (NeoPixel data line)
 // Per FR-010: RGB LED for status indication
-constexpr uint8_t LED_PIN = 10;  // TODO: adjust based on XIAO ESP32-C3 schematic
+constexpr uint8_t LED_PIN = 14;
 
 // Servo control pin (PWM)
 // Per FR-005: servo-driven clamp open/close
-constexpr uint8_t SERVO_PIN = 9;  // TODO: adjust based on available PWM pins
+constexpr uint8_t SERVO_PIN = 9;
 
 // Filament sensor input (microswitch)
 // Per FR-006/FR-010a: sensor stability during boot and feed cycles
-constexpr uint8_t SENSOR_PIN = 8;  // TODO: adjust based on available GPIO
+constexpr uint8_t SENSOR_PIN = 12;
 
 // Daisy-chain Enable-In (EN_IN)
 // Per contracts/i2c-frames.md §"Enumeration sequence": receives enable pulse from upstream slave
-constexpr uint8_t EN_IN_PIN = 7;  // TODO: adjust
+constexpr uint8_t EN_IN_PIN = 15;
 
 // Daisy-chain Enable-Out (EN_OUT)
 // Per contracts/i2c-frames.md §"Enumeration sequence": forwards enable pulse to downstream slave
-constexpr uint8_t EN_OUT_PIN = 6;  // TODO: adjust
+constexpr uint8_t EN_OUT_PIN = 16;
 
 #endif // SLAVE_CONFIG_H

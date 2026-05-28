@@ -4,11 +4,6 @@
 #ifdef MASTER_BUILD
 #include <Arduino.h>
 
-// TODO: Configure these pins for XIAO ESP32-C3
-#define STEPPER_ENABLE_PIN    5
-#define STEPPER_STEP_PIN      6
-#define STEPPER_DIR_PIN       7
-
 #else
 // Stubs for native tests
 #endif

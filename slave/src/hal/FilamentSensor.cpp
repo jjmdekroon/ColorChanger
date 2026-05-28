@@ -4,9 +4,6 @@
 #ifdef SLAVE_BUILD
 #include <Arduino.h>
 
-// TODO: Configure sensor pin for XIAO ESP32-C3
-#define SENSOR_PIN 12
-
 #else
 // Stubs
 #endif
@@ -21,7 +18,9 @@ static uint32_t g_debounce_deadline_ms = 0;
 void init() {
 #ifdef SLAVE_BUILD
     pinMode(SENSOR_PIN, INPUT_PULLUP);
-    g_raw_state = digitalRead(SENSOR_PIN) == LOW;
+    g_raw_state = SENSOR_ACTIVE_LOW
+        ? (digitalRead(SENSOR_PIN) == LOW)
+        : (digitalRead(SENSOR_PIN) == HIGH);
     g_stable_state = g_raw_state;
 #endif
 }
@@ -33,7 +32,9 @@ bool isLoaded() {
 void tick() {
 #ifdef SLAVE_BUILD
     uint32_t now_ms = millis();
-    bool current_raw = digitalRead(SENSOR_PIN) == LOW;
+    bool current_raw = SENSOR_ACTIVE_LOW
+        ? (digitalRead(SENSOR_PIN) == LOW)
+        : (digitalRead(SENSOR_PIN) == HIGH);
     
     // If raw state changed, restart debounce timer
     if (current_raw != g_raw_state) {

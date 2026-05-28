@@ -1,11 +1,10 @@
 #include "LedIndicator.h"
+#include "../include/Config.h"
 
 #ifdef SLAVE_BUILD
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 
-// TODO: Configure LED pin for XIAO ESP32-C3
-#define LED_PIN         14
 #define LED_COUNT       1
 #define LED_BRIGHTNESS  200
 

@@ -10,8 +10,8 @@ This document explains how to wire the current firmware setup for:
 
 Important:
 - Pin numbers below are GPIO numbers used in firmware.
-- Several pin assignments are still marked TODO in code and should be treated as provisional.
-- Slave pin definitions are currently inconsistent between `slave/include/Config.h` and some HAL `.cpp` files. The firmware uses the values in the HAL files where local `#define` values exist.
+- Pin assignments are now centralized in `master/include/Config.h` and `slave/include/Config.h`.
+- HAL modules consume those config constants directly.
 
 ## 1) Master ESP32-C3 Pin Assignments (current firmware)
 
@@ -42,22 +42,20 @@ From `slave/src/hal/*.cpp`:
 | Function | GPIO | Source File |
 |---|---:|---|
 | Servo signal | 9 | `slave/include/Config.h` via `Gripper.cpp` |
-| Filament switch input | 12 | `slave/src/hal/FilamentSensor.cpp` local `#define` |
-| LED data (WS2812) | 14 | `slave/src/hal/LedIndicator.cpp` local `#define` |
-| EN_IN | 15 | `slave/src/hal/EnablePin.cpp` local `#define` |
-| EN_OUT | 16 | `slave/src/hal/EnablePin.cpp` local `#define` |
+| Filament switch input | 12 | `slave/include/Config.h` via `FilamentSensor.cpp` |
+| LED data (WS2812) | 14 | `slave/include/Config.h` via `LedIndicator.cpp` |
+| EN_IN | 15 | `slave/include/Config.h` via `EnablePin.cpp` |
+| EN_OUT | 16 | `slave/include/Config.h` via `EnablePin.cpp` |
 
-### Values also present in `slave/include/Config.h` (not all currently active)
+### Values in `slave/include/Config.h`
 
 | Function | GPIO in Config.h |
 |---|---:|
-| LED_PIN | 10 |
+| LED_PIN | 14 |
 | SERVO_PIN | 9 |
-| SENSOR_PIN | 8 |
-| EN_IN_PIN | 7 |
-| EN_OUT_PIN | 6 |
-
-Because of local `#define` statements in HAL files, the current runtime pins for sensor/LED/enable are 12/14/15/16, not 8/10/7/6.
+| SENSOR_PIN | 12 |
+| EN_IN_PIN | 15 |
+| EN_OUT_PIN | 16 |
 
 ## 3) Component Wiring
 
@@ -127,10 +125,8 @@ Signal is active LOW in current code.
 
 ## 4) Suggested Cleanup (recommended before final hardware harness)
 
-1. Unify slave pin definitions so all HAL modules read from `slave/include/Config.h`.
-2. Move master pin definitions from local `#define` in HAL files into `master/include/Config.h`.
-3. Explicitly set SDA/SCL pins in `Wire.begin(sda, scl)` for both master and slave for unambiguous wiring docs.
-4. Re-test enumeration and load/eject flows after pin unification.
+1. Explicitly set SDA/SCL pins in `Wire.begin(sda, scl)` for both master and slave for unambiguous wiring docs.
+2. Re-test enumeration and load/eject flows after pin/config changes.
 
 ## 5) Quick Bench Checklist
 

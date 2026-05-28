@@ -67,4 +67,12 @@ constexpr uint32_t I2C_CLOCK_HZ = 100000;
 // Each pulse represents one filament unit; typical rate ~2000 Hz per FR-007 context
 constexpr uint32_t STEPPER_FEED_RATE_HZ = 2000;
 
+// ---- Master I/O Pin Assignments ----
+// GPIO mapping for the current XIAO ESP32-C3 firmware wiring.
+constexpr uint8_t STEPPER_ENABLE_PIN = 5;
+constexpr uint8_t STEPPER_STEP_PIN = 6;
+constexpr uint8_t STEPPER_DIR_PIN = 7;
+constexpr uint8_t EN_OUT_PIN = 10;
+constexpr uint8_t EN_IN_PIN = 11;
+
 #endif // MASTER_CONFIG_H

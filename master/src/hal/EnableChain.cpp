@@ -4,10 +4,6 @@
 #ifdef MASTER_BUILD
 #include <Arduino.h>
 
-// TODO: Configure these pins for XIAO ESP32-C3
-#define EN_OUT_PIN  10
-#define EN_IN_PIN   11
-
 #else
 // Stubs
 #endif
